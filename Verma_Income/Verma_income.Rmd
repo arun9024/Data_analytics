@@ -1,0 +1,318 @@
+---
+title: '#Adult Income Dataset'
+author: '##Arun K. Verma'
+date: '###May 25, 2016'
+output: html_document
+---
+
+```{r Setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(rpart.plot)
+library(rattle)
+library(e1071)
+#library(caret)
+#library(klaR)
+library(ggplot2)
+```
+
+## Introduction: 
+In this project, we are given a large adult income dataset which includes both training dataset and test dataset. Our goal is to predict income based on provided features (or a set of them). For that, I will build prediction model using our training dataset. The training dataset is given in data frames having 32561 rows and 15 columns. Here, we have some information of the dataset:
+
+#####Load Train Dataset
+``` {r}
+adult <- read.csv("/Users/Arun/Desktop/Income/adult.train") 
+```
+
+#####Dimensions of Train Dataset
+```{r echo = FALSE}
+dim(adult)
+```
+
+#####Structure of Train Dataset
+``` {r echo = FALSE}
+str(adult)
+```
+
+#####Summary of Train Dataset
+we can see summary of our dataset which will provide us a 5 variable summary (mean, median, min, max, quartiles).
+```{r echo = FALSE}
+summary(adult)
+```
+
+## Exploration and Preparation of Train Dataset
+Firstly, we need to pre-process our data, for which I will find all the rows having unknown values and remove them for buildinng our model. The total number of rows are 2399, which have unknown values.
+```{r echo = FALSE}
+is.na(adult) = adult=='?'
+is.na(adult) = adult==' ?'
+table(complete.cases(adult))
+```
+
+In our dataset, we have two variables as **fnlwgt** and **education.num**. The fnlwgt represents final sampling wieght and education.num represents the highest level of education. Both variables have continous values, and doesn't play much role in predicting income. So, I will remove both variables. 
+```{r echo = FALSE}
+adult = na.omit(adult)
+adult$fnlwgt = NULL
+adult$education.num = NULL
+```
+
+Now, The dimensions of our Train Dataset is : 
+```{r echo = FALSE}
+dim(adult)
+```
+
+#####Age
+To explore, First I am considering age variable. In our data minimum age is 17 and maximum age is 90. So, I will group them into four as _Young, Middle-age, Senior, Old_. We can visualize them through pie-chart. Also, we can see the age distribution for different income levels. We can see that mostly middle-aged people are working with income less than 50K.
+```{r echo=FALSE}
+summary(adult$age)
+adult[[ "age"]] <- ordered(cut(adult[[ "age"]], c(0,25,45,65,100)), labels = c("Young", "Middle-aged", "Senior", "Old"))
+sort(table(adult$age))
+pie(table(adult$age), col = rainbow(4))
+qplot (income, data = adult, fill = age) + facet_grid (. ~ age) + 
+  ggtitle("Age distribution for different income levels")
+```
+
+#####Sex
+Second, we are considering sex variable to see that how many men and women are in our dataset. We also showed the their distribution for different income levels. We can see that almost 2/3 males are working and most of them have income less than 50K.
+```{r echo=FALSE}
+sort(table(adult$sex))
+pie(table(adult$sex), col = rainbow(3))
+```
+
+```{r echo=FALSE}
+qplot (income, data = adult, fill = sex) + facet_grid (. ~ sex) + 
+  ggtitle("Sex distribution for different income levels")
+```
+
+#####Relationship
+Next, we are considering relationship status of people. We can see that moslty husband and those people who are not in family are working having income less than 50K. 
+```{r echo=FALSE}
+sort(table(adult$relationship))
+pie(table(adult$relationship), col = rainbow(6))
+qplot (income, data = adult, fill = relationship) + facet_grid (. ~ relationship) +
+  ggtitle("Relationship for different income levels")
+```
+
+#####Race
+Next, we are also looking race variable. Almost 80% white people are working, also we can that most of the white people have income less than 50K.
+```{r echo=FALSE}
+sort(table(adult$race))
+adult$race = gsub("Amer-Indian-Eskimo", "Amer-Indian", adult$race)
+adult$race = gsub("Asian-Pac-Islander", "Asian", adult$race)
+sort(table(adult$race))
+pie(table(adult$race), col = rainbow(5))
+```
+
+```{r echo=FALSE}
+qplot (income, data = adult, fill = race) + facet_grid (. ~ race) + 
+  ggtitle("Race distribution for different income levels")
+```
+
+#####Marital Status
+Here again, I will group them like _Married-AF-spouse_ and _Married-civ-spouse_ are **Married** people. And, _Married-spouse-absent_, _Separated_ and _Divorced_ are **Unmarried** people.
+Now, we can say for most of unmarried and never-married people have income less than 50K. While for married people, almost half of them have income greater than 50K and other half have income less than 50K.
+```{r echo=FALSE}
+sort(table(adult$marital.status))
+adult$marital.status = gsub("Married-AF-spouse", "Married", adult$marital.status)
+adult$marital.status = gsub("Married-civ-spouse", "Married", adult$marital.status)
+adult$marital.status = gsub("Married-spouse-absent", "Unmarried", adult$marital.status)
+adult$marital.status = gsub("Separated", "Unmarried", adult$marital.status)
+adult$marital.status = gsub("Divorced", "Unmarried", adult$marital.status)
+sort(table(adult$marital.status))
+pie(table(adult$marital.status), col = rainbow(4))
+qplot (income, data = adult, fill = marital.status) + facet_grid (. ~ marital.status) + 
+  ggtitle("Marital relation distribution for different income levels")
+```
+
+#####Education
+Similar to previous section, I will group them like people of educational standard as _5th-6th, 7th-8th, 9th, 10th, 11th, 12th_ are **Dropped**. While _Assoc-acdm, Assoc-voc_ are **Associates** and _HS-grad, Some-college_ are **HS-Graduate**.
+Here, we can see that most of the HS-Graduate and Dropped people are working with income less than 50K. While for Bachelor people, almost half of them have income greater than 50K and other half have income less than 50K.
+```{r echo=FALSE}
+sort(table(adult$education))
+adult$education = gsub("10th","Droppped",adult$education)
+adult$education = gsub("11th","Droppped",adult$education)
+adult$education = gsub("12th","Droppped",adult$education)
+adult$education = gsub("1st-4th","Droppped",adult$education)
+adult$education = gsub("5th-6th","Droppped",adult$education)
+adult$education = gsub("7th-8th","Droppped",adult$education)
+adult$education = gsub("9th","Droppped",adult$education)
+adult$education = gsub("Preschool","Droppped",adult$education)
+adult$education = gsub("Assoc-acdm","Associates",adult$education)
+adult$education = gsub("Assoc-voc","Associates",adult$education)
+adult$education = gsub("HS-grad","HS-Graduate",adult$education)
+adult$education = gsub("Some-college","HS-Graduate",adult$education)
+sort(table(adult$education))
+pie(sort(table(adult$education)), col = rainbow(7))
+```
+
+```{r echo=FALSE}
+qplot (income, data = adult, fill = education) + facet_grid (. ~ education) + 
+  ggtitle("Educational level for different income levels") + 
+  theme(text = element_text(size=11), axis.text.x = element_text(angle=90, vjust=1))
+```
+
+#####Workclass
+Again, we'll group people based on their workclass like people having _Local-gov, State-gov_ are **Some-Govt** people. Similarly, _Self-emp-inc, Self-emp-not-inc_ are **Self-Employed** people, and _Without-pay, Never-worked_ are **Not-Working** people.
+Now, we can see that most of the people have private job. Also, the distribution graph shows that many of them are working with income less than 50K.
+```{r echo=FALSE}
+sort(table(adult$workclass))
+adult$workclass = gsub("Local-gov","Some-Govt",adult$workclass)
+adult$workclass = gsub("State-gov","Some-Govt",adult$workclass)
+adult$workclass = gsub("Self-emp-inc","Self-Employed",adult$workclass)
+adult$workclass = gsub("Self-emp-not-inc","Self-Employed",adult$workclass)
+adult$workclass = gsub("Without-pay","Not-Working",adult$workclass)
+adult$workclass = gsub("Never-worked","Not-Working",adult$workclass)
+sort(table(adult$workclass))
+pie(table(adult$workclass), col = rainbow(5))
+qplot (income, data = adult, fill = workclass) + facet_grid (. ~ workclass) + 
+  ggtitle("Workclass distribution for different income levels") + 
+  theme(text = element_text(size=11), axis.text.x = element_text(angle=90, vjust=1))
+```
+
+#####Occupation
+Here, I am grouping people based on their occupation. People having occupation as _Craft-repair, Farming-fishing, Handlers-cleaners, Machine-op-inspct, Transport-moving_ can be considered as **Blue-Collar** people. Similarly, we can group _Exec-managerial, Tech-support_ people as **white collar**, and _Other-service, Priv-house-serv_ people as **Service**. 
+Mostly, Blue-collar people are working approximate 30%. From income distribution graph we can see that most of the people having job as Blue-collar, Admin and Service are working with income less than 50K.
+```{r echo=FALSE}
+sort(table(adult$occupation))
+adult$occupation = gsub("Adm-clerical","Admin",adult$occupation)
+adult$occupation = gsub("Armed-Forces","Military",adult$occupation)
+adult$occupation = gsub("Craft-repair","Blue-Collar",adult$occupation)
+adult$occupation = gsub("Exec-managerial","White-Collar",adult$occupation)
+adult$occupation = gsub("Farming-fishing","Blue-Collar",adult$occupation)
+adult$occupation = gsub("Handlers-cleaners","Blue-Collar",adult$occupation)
+adult$occupation = gsub("Machine-op-inspct","Blue-Collar",adult$occupation)
+adult$occupation = gsub("Other-service","Service",adult$occupation)
+adult$occupation = gsub("Priv-house-serv","Service",adult$occupation)
+adult$occupation = gsub("Prof-specialty","Professional",adult$occupation)
+adult$occupation = gsub("Protective-serv","Other-Occupations",adult$occupation)
+adult$occupation = gsub("Tech-support","White-Collar",adult$occupation)
+adult$occupation = gsub("Transport-moving","Blue-Collar",adult$occupation)
+sort(table(adult$occupation))
+pie(table(adult$occupation), col = rainbow(8))
+qplot (income, data = adult, fill = occupation) + facet_grid (. ~ occupation) + 
+  ggtitle("Occupation distribution for different income levels") + 
+  theme(text = element_text(size=8), axis.text.x = element_text(angle=90, vjust=1))
+```
+
+#####Hours-per-Week
+For this variable, we can see that maximum working-hour is 99 and minimum is 1 hour. I will group people into **Part-time, Full-time, Over-time** and **Workaholic**. Most of the people has Full-time job with income less than 50K. Likewise, most of part-time people are working with income less than 50K.
+```{r echo=FALSE}
+summary(adult$hours.per.week)
+adult[[ "hours.per.week"]] <- ordered(cut(adult[[ "hours.per.week"]], c(0,25,40,60,168)), labels = c("Part-time", "Full-time", "Over-time", "Workaholic"))
+sort(table(adult$hours.per.week))
+pie(table(adult$hours.per.week), col = rainbow(4))
+```
+
+```{r echo=FALSE}
+qplot (income, data = adult, fill = hours.per.week) + facet_grid (. ~ hours.per.week) + 
+  ggtitle("Working-hours distribution for different income levels")
+```
+
+#### Dealing with the Test dataset
+I will also follow the same steps mentioned above with the test data for building our prediction models. Now, we can see the dimensions of test dataset.  
+```{r echo=FALSE}
+test <- read.csv("/Users/Arun/Desktop/Income/adult.test")
+
+is.na(test) = test=='?'
+is.na(test) = test==' ?'
+table(complete.cases(test))
+test = na.omit(test)
+test$fnlwgt = NULL
+test$education.num = NULL
+
+test[[ "age"]] <- ordered(cut(test[[ "age"]], c(0,25,45,65,100)), labels = c("Young", "Middle-aged", "Senior", "Old"))
+
+test$race = gsub("Amer-Indian-Eskimo", "Amer-Indian", test$race)
+test$race = gsub("Asian-Pac-Islander", "Asian", test$race)
+
+test$marital.status = gsub("Married-AF-spouse", "Married", test$marital.status)
+test$marital.status = gsub("Married-civ-spouse", "Married", test$marital.status)
+test$marital.status = gsub("Married-spouse-absent", "Unmarried", test$marital.status)
+test$marital.status = gsub("Separated", "Unmarried", test$marital.status)
+test$marital.status = gsub("Divorced", "Unmarried", test$marital.status)
+
+test$education = gsub("10th","Droppped",test$education)
+test$education = gsub("11th","Droppped",test$education)
+test$education = gsub("12th","Droppped",test$education)
+test$education = gsub("1st-4th","Droppped",test$education)
+test$education = gsub("5th-6th","Droppped",test$education)
+test$education = gsub("7th-8th","Droppped",test$education)
+test$education = gsub("9th","Droppped",test$education)
+test$education = gsub("Preschool","Droppped",test$education)
+test$education = gsub("Assoc-acdm","Associates",test$education)
+test$education = gsub("Assoc-voc","Associates",test$education)
+test$education = gsub("HS-grad","HS-Graduate",test$education)
+test$education = gsub("Some-college","HS-Graduate",test$education)
+
+test$workclass = gsub("Local-gov","Some-Govt",test$workclass)
+test$workclass = gsub("State-gov","Some-Govt",test$workclass)
+test$workclass = gsub("Self-emp-inc","Self-Employed",test$workclass)
+test$workclass = gsub("Self-emp-not-inc","Self-Employed",test$workclass)
+test$workclass = gsub("Without-pay","Not-Working",test$workclass)
+test$workclass = gsub("Never-worked","Not-Working",test$workclass)
+
+test$occupation = gsub("Adm-clerical","Admin",test$occupation)
+test$occupation = gsub("Armed-Forces","Military",test$occupation)
+test$occupation = gsub("Craft-repair","Blue-Collar",test$occupation)
+test$occupation = gsub("Exec-managerial","White-Collar",test$occupation)
+test$occupation = gsub("Farming-fishing","Blue-Collar",test$occupation)
+test$occupation = gsub("Handlers-cleaners","Blue-Collar",test$occupation)
+test$occupation = gsub("Machine-op-inspct","Blue-Collar",test$occupation)
+test$occupation = gsub("Other-service","Service",test$occupation)
+test$occupation = gsub("Priv-house-serv","Service",test$occupation)
+test$occupation = gsub("Prof-specialty","Professional",test$occupation)
+test$occupation = gsub("Protective-serv","Other-Occupations",test$occupation)
+test$occupation = gsub("Tech-support","White-Collar",test$occupation)
+test$occupation = gsub("Transport-moving","Blue-Collar",test$occupation)
+
+test[[ "hours.per.week"]] <- ordered(cut(test[[ "hours.per.week"]], c(0,25,40,60,168)), labels = c("Part-time", "Full-time", "Over-time", "Workaholic"))
+```
+
+## Building Prediction Models
+| To predict income for test dataset, I will use two prediction Models as:
+| **A.** Decision-Tree Prediction Model
+| **B.** Naive-Bayes Model
+
+### Decision-Tree Prediction Model
+In this model, first we need to make a tree based on which I will predict the income for test dataset. I will consider variables age, workclass, education, capital.gain, capital.loss, relationship, sex, race, hours.per.week as important factor for income prediction. Here, I am using rpart library which uses a feature selection methodology. It selects some predictors to build the decision-tree. 
+```{r echo=FALSE}
+decision_tree <- rpart(income ~ age + workclass + education + capital.gain + capital.loss + relationship + sex + race, data = adult, method = "class")
+print(decision_tree)
+fancyRpartPlot(decision_tree, main = "                Income Level")
+```
+
+In the above decision tree we can see the probability and percentage of income distribution. For example, tree shows that people having relations as Not-in-family, Other-relative, Own-child, or Unmarried are 55%, while other married people are 46%. 
+If we consider those 55% people, out of those, people with capital gain less than 7074, has income <=50K. Similary, if we consider 46% married people, we again put some rules on them like capital.gain and capital.loss.
+For income prediction, if we have probability 0.5 at least, then it will predict income less than 50K otherwise it will predict income greater than 50K. Now, we compare this predicted income with the given income for test data, and see how many times it predict correct income. So that we can see the accuracy of our model.
+
+```{r echo=FALSE}
+pred <- predict(decision_tree, test[1:12])
+test$pred_income = ifelse(pred[,1] >= .5, "<=50K", ">50K")
+test$pred_income = factor(test$pred_income)
+test$income = as.numeric(test$income)
+test$pred_income = as.numeric(test$pred_income)
+accuracy <- round(sum(test[13] == test[14])/nrow(test), digits = 4)
+print(paste("The Decision tree model predicted the income of adult.test dataset with", accuracy*100, "% of accuracy."))
+```
+
+### Naive-Bayes Model
+The Naive-Bayes model classify entities based on _conditional probability_ concept. Or in other words, it will find the probability of something being happen, based on something else has already happened. In the adult dataset we are going to predict income by making decision rules (Bayes rules) which seems most probable. I am classifying income as less/equal to 50K and greater than 50K based on provided features (age, education, relationship, marital.status, capital.gain etc). Naive-Bayes model has an bayesian equation to calculate posterior probability for these class. For exapmple income of a person is less than 50K if he is young HS-graduate with private job. Similarly, this model contains probability of other bayes rules. We can also see the naive-bayes grouping tables and levels as follows: 
+```{r echo=FALSE}
+naive_bayes <- NaiveBayes(income ~ ., data=adult)
+test$pred_income = predict(naive_bayes, test[1:12])
+test$pred_income = factor(test$pred_income$class)
+test$pred_income = as.numeric(test$pred_income)
+accuracy <- round(sum(test[13] == test[14])/nrow(test), digits = 4)
+```
+
+```{r echo=FALSE}
+print(naive_bayes$tables)
+print(naive_bayes$apriori)
+print(naive_bayes$levels)
+```
+
+Firstly, I predicted the income for test dataset and maintained into a seperate column (pred_income). Then I compared the predicted income with the given income, to check where my model predicted income correctly.
+```{r echo=FALSE}
+print(paste("The naive-bayes model predicted the income of adult.test dataset with", accuracy*100, "% of accuracy."))
+```
+
+##Conclusion
+I worked on adult income dataset to build prediction models. I realized that variables as age, education, marital-status, workclass, capital-gain are good factor to predict income. So, I did some manipulation with my dataset by making some groups inside some variables. I build two models as Decision-Tree model and Naive-Bayes Model. The income predicted from Decision-Tree model is much accurate (85 %) than the Naive-Bayes model (79 %). 
